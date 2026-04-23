@@ -58,12 +58,4 @@ class Pembelian extends Model
     {
         return $this->hasMany(PembayaranPembelian::class, 'pembelian_id');
     }
-
-    public function hitungSisaHutang()
-{
-    $totalTagihan = $this->total_bayar;
-    $totalDibayar = $this->pembayaranPembelian()->sum('jumlah_bayar');
-    
-    return $totalTagihan - $totalDibayar;
-}
 }
