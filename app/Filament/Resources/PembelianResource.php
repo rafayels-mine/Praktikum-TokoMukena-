@@ -71,7 +71,12 @@ class PembelianResource extends Resource
                                         ->label('Total Tagihan')
                                         ->default(0)
                                         ->numeric()
-                                        ->hidden() // Tersembunyi, diupdate via action
+                                        ->hidden()
+                                        ->dehydrated(),
+
+                                    Forms\Components\Hidden::make('status')
+                                        ->default('pesan')
+                                        ->live() // Tambahkan live agar state terpantau
                                         ->dehydrated(),
                                 ])
                                 ->columns(3),
@@ -81,7 +86,7 @@ class PembelianResource extends Resource
                     Wizard\Step::make('Item Barang')
                     ->schema([
                         Repeater::make('items')
-                            ->relationship('pembelianBarang') // Pastikan relasi ini ada di model Pembelian
+                            ->relationship('pembelianBarang')
                             ->schema([
                                 Select::make('barang_id')
                                     ->label('Barang')
@@ -92,7 +97,6 @@ class PembelianResource extends Resource
                                     ->disableOptionsWhenSelectedInSiblingRepeaterItems()
                                     ->afterStateUpdated(function ($state, $set) {
                                         $barang = Barang::find($state);
-                                        // Set harga beli terakhir dari master barang sebagai default
                                         $set('harga_beli', $barang ? $barang->harga_barang : 0);
                                     }),
 
@@ -118,55 +122,73 @@ class PembelianResource extends Resource
                             ->addActionLabel('Tambah Barang Masuk')
                             ->minItems(1),
 
-                        // TOMBOL PROSES (Update Stok & Total)
+                        // TOMBOL PROSES (Dengan Pilihan Metode Pembayaran)
                         Forms\Components\Actions::make([
                             Forms\Components\Actions\Action::make('Proses Masuk Barang')
-                                ->action(function ($get, $set) {
+                                ->label('Konfirmasi Stok Masuk')
+                                ->color('success')
+                                ->icon('heroicon-m-check-circle')
+                                ->form([
+                                    Forms\Components\Select::make('metode_bayar')
+                                        ->label('Opsi Pembayaran')
+                                        ->options([
+                                            'bayar' => 'Langsung Bayar (Lunas)',
+                                            'pesan' => 'Utang (Bayar Nanti)',
+                                        ])
+                                        ->default('pesan')
+                                        ->required(),
+                                ])
+                                ->action(function ($get, $set, $data) { // Parameter $set ditambahkan
                                     // 1. Simpan/Update Header Pembelian
                                     $pembelian = Pembelian::updateOrCreate(
                                         ['no_faktur_pembelian' => $get('no_faktur_pembelian')],
                                         [
                                             'tgl' => $get('tgl'),
                                             'vendor_id' => $get('vendor_id'),
-                                            'total_bayar' => 0, // Sementara
-                                            'status' => 'pesan',
+                                            'status' => $data['metode_bayar'], 
                                         ]
                                     );
 
-                                    // 2. Simpan Detail & Update Stok
+                                    // Sinkronisasi status ke form utama agar terbaca tombol di halaman Create
+                                    $set('status', $data['metode_bayar']);
+
+                                    // 2. Simpan Detail & Update Stok (Logika anti-double)
                                     foreach ($get('items') as $item) {
-                                        PembelianBarang::updateOrCreate(
-                                            [
+                                        $cekDetail = PembelianBarang::where('pembelian_id', $pembelian->id)
+                                            ->where('barang_id', $item['barang_id'])
+                                            ->first();
+
+                                        if (!$cekDetail) {
+                                            PembelianBarang::create([
                                                 'pembelian_id' => $pembelian->id,
-                                                'barang_id' => $item['barang_id']
-                                            ],
-                                            [
+                                                'barang_id' => $item['barang_id'],
                                                 'harga_beli' => $item['harga_beli'],
                                                 'jml' => $item['jml'],
                                                 'tgl' => $item['tgl'],
-                                            ]
-                                        );
+                                            ]);
 
-                                        // LOGIKA AKUNTANSI: Pembelian = Stok Bertambah
-                                        $barang = Barang::find($item['barang_id']);
-                                        if ($barang) {
-                                            $barang->increment('stok', $item['jml']);
-                                            // Opsional: Update harga master barang ke harga beli terbaru
-                                            $barang->update(['harga_barang' => $item['harga_beli']]);
+                                            $barang = Barang::find($item['barang_id']);
+                                            if ($barang) {
+                                                $barang->increment('stok', $item['jml']);
+                                                $barang->update(['harga_barang' => $item['harga_beli']]);
+                                            }
+                                        } else {
+                                            $cekDetail->update([
+                                                'harga_beli' => $item['harga_beli'],
+                                                'jml' => $item['jml'],
+                                                'tgl' => $item['tgl'],
+                                            ]);
                                         }
                                     }
 
-                                    // 3. Hitung Total Akhir
                                     $totalGlobal = PembelianBarang::where('pembelian_id', $pembelian->id)
                                         ->sum(DB::raw('harga_beli * jml'));
 
                                     $pembelian->update(['total_bayar' => $totalGlobal]);
-                                    
-                                    // Notifikasi sukses bisa ditambahkan di sini
                                 })
-                                ->label('Konfirmasi Stok Masuk')
-                                ->color('success')
-                                ->icon('heroicon-m-check-circle'),
+                                ->requiresConfirmation()
+                                ->modalHeading('Proses Transaksi')
+                                ->modalDescription('Pilih status pembayaran untuk nota ini.'),
                         ]),
                     ]),
 
@@ -191,7 +213,7 @@ class PembelianResource extends Resource
                     ->searchable(),
                 TextColumn::make('total_bayar')
                     ->label('Total Belanja')
-                    ->money('IDR') // Menggunakan format mata uang bawaan Filament
+                    ->money('IDR')
                     ->alignment('end'),
                 TextColumn::make('tgl')
                     ->label('Tanggal Transaksi')
@@ -201,7 +223,7 @@ class PembelianResource extends Resource
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'bayar', 'lunas' => 'success',
-                        'pesan' => 'warning',
+                        'pesan' => 'danger',
                         default => 'secondary',
                     }),
             ])
@@ -213,15 +235,15 @@ class PembelianResource extends Resource
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
-        ->before(function (Pembelian $record) {
-            foreach ($record->pembelianBarang as $item) {
-                $barang = Barang::find($item->barang_id);
-                if ($barang) {
-                    $barang->decrement('stok', $item->jml);
-                }
-            }
-        }),
-    ])
+                    ->before(function (Pembelian $record) {
+                        foreach ($record->pembelianBarang as $item) {
+                            $barang = Barang::find($item->barang_id);
+                            if ($barang) {
+                                $barang->decrement('stok', $item->jml);
+                            }
+                        }
+                    }),
+            ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()

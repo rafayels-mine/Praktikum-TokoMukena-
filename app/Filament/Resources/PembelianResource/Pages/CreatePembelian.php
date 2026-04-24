@@ -9,7 +9,7 @@ use Filament\Resources\Pages\CreateRecord;
 // Model
 use App\Models\Pembelian;
 use App\Models\PembelianBarang;
-use App\Models\PembayaranPembelian; // Sesuaikan dengan nama model pembayaran pembelianmu
+use App\Models\PembayaranPembelian; 
 use Filament\Notifications\Notification;
 
 class CreatePembelian extends CreateRecord
@@ -22,30 +22,39 @@ class CreatePembelian extends CreateRecord
     protected function getFormActions(): array
     {
         return [
-            
-            // Tombol kustom untuk langsung proses pelunasan ke Vendor
+            // 1. Tombol Simpan Standar (Hanya muncul jika statusnya 'pesan'/Utang)
+            $this->getCreateFormAction()
+                ->label('Draft')
+                ->color('warning')
+                ->hidden(fn () => ($this->data['status'] ?? '') === 'bayar'),
+
+            // 2. Tombol kustom Bayar & Lunasi (Hanya muncul jika statusnya 'bayar')
             Actions\Action::make('lunasi_ke_vendor')
-                ->label('Bayar & Lunasi')
-                ->color('info')
+                ->label('Bayar & Lunasi Sekarang')
+                ->color('success')
                 ->icon('heroicon-m-banknotes')
                 ->action(fn () => $this->simpanPembayaranVendor())
+                ->hidden(fn () => ($this->data['status'] ?? '') !== 'bayar')
                 ->requiresConfirmation()
                 ->modalHeading('Konfirmasi Pembayaran Vendor')
                 ->modalDescription('Apakah Anda yakin ingin mencatat pelunasan untuk pembelian ini?')
                 ->modalButton('Ya, Lunasi Sekarang'),
 
-            // Tombol cancel
+            // 3. Tombol cancel
             $this->getCancelFormAction(),
         ];
     }
 
     /**
-     * Logika untuk menyimpan data ke tabel pengeluaran_vendor
+     * Logika untuk menyimpan data ke tabel PembayaranPembelian
      */
     protected function simpanPembayaranVendor()
     {
-        // Pastikan record utama (Pembelian) sudah tersimpan/ada
-        $pembelian = $this->record ?? Pembelian::latest()->first();
+        // Jalankan proses create record terlebih dahulu agar ID tersedia
+        $this->create();
+
+        // Ambil record yang baru saja dibuat
+        $pembelian = $this->record;
 
         if (!$pembelian) {
             Notification::make()
@@ -56,22 +65,20 @@ class CreatePembelian extends CreateRecord
             return;
         }
 
-        // 1. Simpan ke tabel pengeluaran_vendor (Uang Keluar)
-       PembayaranPembelian::create([
-    'pembelian_id'      => $pembelian->id,
-    'tgl_bayar'         => now(),
-    'jenis_pembayaran'  => 'transfer', // Atau 'tunai' sesuai kebutuhan
-    'transaction_time'  => now(),
-    'gross_amount'      => $pembelian->total_bayar, 
-    'order_id'          => $pembelian->no_faktur_pembelian, 
-    ]);
-
-    $pembelian->update([
-            'status' => 'lunas', // Update status pembelian menjadi 'lunas'
+        // 1. Simpan ke tabel PembayaranPembelian (Uang Keluar)
+        PembayaranPembelian::create([
+            'pembelian_id'      => $pembelian->id,
+            'tgl_bayar'         => now(),
+            'jenis_pembayaran'  => 'transfer', 
+            'transaction_time'  => now(),
+            'gross_amount'      => $pembelian->total_bayar, 
+            'order_id'          => $pembelian->no_faktur_pembelian, 
         ]);
 
-        // 2. Opsional: Jika kamu punya kolom status di tabel pembelian
-        // $pembelian->update(['status' => 'lunas']);
+        // 2. Pastikan status pembelian menjadi 'bayar' (Lunas)
+        $pembelian->update([
+            'status' => 'bayar', 
+        ]);
 
         // 3. Notifikasi Sukses
         Notification::make()
