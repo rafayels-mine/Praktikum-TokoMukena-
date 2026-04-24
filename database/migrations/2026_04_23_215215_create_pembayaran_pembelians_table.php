@@ -17,7 +17,7 @@ return new class extends Migration
             $table->date('tgl_bayar');
             $table->string('jenis_pembayaran');
             $table->dateTime('transaction_time')->nullable();
-            $table->decimal('gross_amount',10,2);
+            $table->decimal('gross_amount',10,2)->nullable();   
             $table->string('order_id')->nullable();
             $table->string('payment_type')->nullable();
             $table->string('status_code')->nullable();

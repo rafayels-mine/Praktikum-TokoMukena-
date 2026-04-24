@@ -15,7 +15,6 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Support\Facades\DB;
 
-// Filament Components
 use Filament\Forms\Components\Wizard;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\DateTimePicker;
@@ -25,7 +24,6 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Placeholder;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
-use Filament\Forms\Get;
 
 class PembelianResource extends Resource
 {
@@ -42,18 +40,18 @@ class PembelianResource extends Resource
         return $form
             ->schema([
                 Wizard::make([
-                    // STEP 1: INFORMASI VENDOR & FAKTUR
+                    // STEP 1
                     Wizard\Step::make('Data Vendor')
                         ->schema([
-                            Forms\Components\Section::make('no_faktur_pembelian')
+                            Forms\Components\Section::make('Informasi Faktur')
                                 ->icon('heroicon-m-clipboard-document-check')
-                                ->schema([ 
+                                ->schema([
                                     TextInput::make('no_faktur_pembelian')
                                         ->default(fn () => Pembelian::getKodeFakturBeli())
                                         ->label('Nomor Faktur Beli')
                                         ->required()
                                         ->readonly(),
-                                    
+
                                     DateTimePicker::make('tgl')
                                         ->label('Tanggal Beli')
                                         ->default(now())
@@ -76,129 +74,132 @@ class PembelianResource extends Resource
 
                                     Forms\Components\Hidden::make('status')
                                         ->default('pesan')
-                                        ->live() // Tambahkan live agar state terpantau
+                                        ->live()
                                         ->dehydrated(),
                                 ])
                                 ->columns(3),
                         ]),
 
-                    // STEP 2: INPUT BARANG DATANG
+                    // STEP 2
                     Wizard\Step::make('Item Barang')
-                    ->schema([
-                        Repeater::make('items')
-                            ->relationship('pembelianBarang')
-                            ->schema([
-                                Select::make('barang_id')
-                                    ->label('Barang')
-                                    ->options(Barang::pluck('nama_barang', 'id')->toArray())
-                                    ->required()
-                                    ->reactive()
-                                    ->searchable()
-                                    ->disableOptionsWhenSelectedInSiblingRepeaterItems()
-                                    ->afterStateUpdated(function ($state, $set) {
-                                        $barang = Barang::find($state);
-                                        $set('harga_beli', $barang ? $barang->harga_barang : 0);
-                                    }),
+                        ->schema([
+                            Repeater::make('pembelianBarang')
+                                ->relationship('pembelianBarang')
+                                ->schema([
+                                    Select::make('barang_id')
+                                        ->label('Barang')
+                                        ->options(Barang::pluck('nama_barang', 'id')->toArray())
+                                        ->required()
+                                        ->reactive()
+                                        ->searchable()
+                                        ->disableOptionsWhenSelectedInSiblingRepeaterItems()
+                                        ->afterStateUpdated(function ($state, $set) {
+                                            $barang = Barang::find($state);
+                                            $set('harga_beli', $barang ? $barang->harga_barang : 0);
+                                        }),
 
-                                TextInput::make('harga_beli')
-                                    ->label('Harga Satuan')
-                                    ->numeric()
-                                    ->required()
-                                    ->prefix('Rp'),
+                                    TextInput::make('harga_beli')
+                                        ->label('Harga Satuan')
+                                        ->numeric()
+                                        ->required()
+                                        ->prefix('Rp'),
 
-                                TextInput::make('jml')
-                                    ->label('Jumlah Masuk')
-                                    ->numeric()
-                                    ->default(1)
-                                    ->required()
-                                    ->reactive(),
+                                    TextInput::make('jml')
+                                        ->label('Jumlah Masuk')
+                                        ->numeric()
+                                        ->default(1)
+                                        ->required()
+                                        ->reactive(),
 
-                                DatePicker::make('tgl')
-                                    ->label('Tgl. Diterima')
-                                    ->default(today())
-                                    ->required(),
-                            ])
-                            ->columns(4)
-                            ->addActionLabel('Tambah Barang Masuk')
-                            ->minItems(1),
-
-                        // TOMBOL PROSES (Dengan Pilihan Metode Pembayaran)
-                        Forms\Components\Actions::make([
-                            Forms\Components\Actions\Action::make('Proses Masuk Barang')
-                                ->label('Konfirmasi Stok Masuk')
-                                ->color('success')
-                                ->icon('heroicon-m-check-circle')
-                                ->form([
-                                    Forms\Components\Select::make('metode_bayar')
-                                        ->label('Opsi Pembayaran')
-                                        ->options([
-                                            'bayar' => 'Langsung Bayar (Lunas)',
-                                            'pesan' => 'Utang (Bayar Nanti)',
-                                        ])
-                                        ->default('pesan')
+                                    DatePicker::make('tgl')
+                                        ->label('Tgl. Diterima')
+                                        ->default(today())
                                         ->required(),
                                 ])
-                                ->action(function ($get, $set, $data) { // Parameter $set ditambahkan
-                                    // 1. Simpan/Update Header Pembelian
-                                    $pembelian = Pembelian::updateOrCreate(
-                                        ['no_faktur_pembelian' => $get('no_faktur_pembelian')],
-                                        [
-                                            'tgl' => $get('tgl'),
-                                            'vendor_id' => $get('vendor_id'),
-                                            'status' => $data['metode_bayar'], 
-                                        ]
-                                    );
+                                ->columns(4)
+                                ->addActionLabel('Tambah Barang Masuk')
+                                ->minItems(1),
 
-                                    // Sinkronisasi status ke form utama agar terbaca tombol di halaman Create
-                                    $set('status', $data['metode_bayar']);
+                            Forms\Components\Actions::make([
+                                Forms\Components\Actions\Action::make('proses_masuk_barang')
+                                    ->label('Konfirmasi Stok Masuk')
+                                    ->color('success')
+                                    ->icon('heroicon-m-check-circle')
+                                    ->form([
+                                        Forms\Components\Select::make('metode_bayar')
+                                            ->label('Opsi Pembayaran')
+                                            ->options([
+                                                'bayar' => 'Langsung Bayar (Lunas)',
+                                                'pesan' => 'Utang (Bayar Nanti)',
+                                            ])
+                                            ->default('pesan')
+                                            ->required(),
+                                    ])
+                                    ->action(function ($get, $set, $data) {
+                                        $pembelian = Pembelian::updateOrCreate(
+                                            ['no_faktur_pembelian' => $get('no_faktur_pembelian')],
+                                            [
+                                                'tgl'         => $get('tgl'),
+                                                'vendor_id'   => $get('vendor_id'),
+                                                'status'      => $data['metode_bayar'],
+                                                'total_bayar' => 0,
+                                            ]
+                                        );
 
-                                    // 2. Simpan Detail & Update Stok (Logika anti-double)
-                                    foreach ($get('items') as $item) {
-                                        $cekDetail = PembelianBarang::where('pembelian_id', $pembelian->id)
-                                            ->where('barang_id', $item['barang_id'])
-                                            ->first();
+                                        $set('status', $data['metode_bayar']);
 
-                                        if (!$cekDetail) {
-                                            PembelianBarang::create([
-                                                'pembelian_id' => $pembelian->id,
-                                                'barang_id' => $item['barang_id'],
-                                                'harga_beli' => $item['harga_beli'],
-                                                'jml' => $item['jml'],
-                                                'tgl' => $item['tgl'],
-                                            ]);
+                                        $items = $get('pembelianBarang') ?? [];
 
-                                            $barang = Barang::find($item['barang_id']);
-                                            if ($barang) {
-                                                $barang->increment('stok', $item['jml']);
-                                                $barang->update(['harga_barang' => $item['harga_beli']]);
+                                        foreach ($items as $item) {
+                                            if (empty($item['barang_id'])) continue;
+
+                                            $cekDetail = PembelianBarang::where('pembelian_id', $pembelian->id)
+                                                ->where('barang_id', $item['barang_id'])
+                                                ->first();
+
+                                            if (!$cekDetail) {
+                                                PembelianBarang::create([
+                                                    'pembelian_id' => $pembelian->id,
+                                                    'barang_id'    => $item['barang_id'],
+                                                    'harga_beli'   => $item['harga_beli'],
+                                                    'jml'          => $item['jml'],
+                                                    'tgl'          => $item['tgl'],
+                                                ]);
+
+                                                $barang = Barang::find($item['barang_id']);
+                                                if ($barang) {
+                                                    $barang->increment('stok', $item['jml']);
+                                                    $barang->update(['harga_barang' => $item['harga_beli']]);
+                                                }
+                                            } else {
+                                                $cekDetail->update([
+                                                    'harga_beli' => $item['harga_beli'],
+                                                    'jml'        => $item['jml'],
+                                                    'tgl'        => $item['tgl'],
+                                                ]);
                                             }
-                                        } else {
-                                            $cekDetail->update([
-                                                'harga_beli' => $item['harga_beli'],
-                                                'jml' => $item['jml'],
-                                                'tgl' => $item['tgl'],
-                                            ]);
                                         }
-                                    }
 
-                                    $totalGlobal = PembelianBarang::where('pembelian_id', $pembelian->id)
-                                        ->sum(DB::raw('harga_beli * jml'));
+                                        $totalGlobal = PembelianBarang::where('pembelian_id', $pembelian->id)
+                                            ->sum(DB::raw('harga_beli * jml'));
 
-                                    $pembelian->update(['total_bayar' => $totalGlobal]);
-                                })
-                                ->requiresConfirmation()
-                                ->modalHeading('Proses Transaksi')
-                                ->modalDescription('Pilih status pembayaran untuk nota ini.'),
+                                        $pembelian->update(['total_bayar' => $totalGlobal]);
+
+                                        // ✅ Tidak redirect — user lanjut Next → Step 3 → Create
+                                    })
+                                    ->requiresConfirmation()
+                                    ->modalHeading('Proses Transaksi')
+                                    ->modalDescription('Pilih status pembayaran untuk nota ini.'),
+                            ]),
                         ]),
-                    ]),
 
-                    // STEP 3: RINGKASAN
+                    // STEP 3
                     Wizard\Step::make('Selesai')
                         ->schema([
                             Placeholder::make('Info')
                                 ->content('Barang yang diproses otomatis menambah stok di gudang. Silahkan cek menu Barang untuk memastikan.'),
                         ]),
-                ])->columnSpanFull()
+                ])->columnSpanFull(),
             ]);
     }
 
@@ -223,14 +224,14 @@ class PembelianResource extends Resource
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
                         'bayar', 'lunas' => 'success',
-                        'pesan' => 'danger',
-                        default => 'secondary',
+                        'pesan'          => 'danger',
+                        default          => 'secondary',
                     }),
             ])
             ->filters([
                 SelectFilter::make('vendor_id')
                     ->label('Filter Vendor')
-                    ->relationship('vendor', 'nama_vendor')
+                    ->relationship('vendor', 'nama_vendor'),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
@@ -264,9 +265,9 @@ class PembelianResource extends Resource
     public static function getPages(): array
     {
         return [
-            'index' => Pages\ListPembelians::route('/'),
+            'index'  => Pages\ListPembelians::route('/'),
             'create' => Pages\CreatePembelian::route('/create'),
-            'edit' => Pages\EditPembelian::route('/{record}/edit'),
+            'edit'   => Pages\EditPembelian::route('/{record}/edit'),
         ];
     }
 }
