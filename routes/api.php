@@ -17,3 +17,10 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
+
+// tambahan untuk routes callback agar Midtrans bisa mengirim data tanpa terhalang token CSRF.
+// use App\Http\Controllers\CobaMidtransController;
+// Route::post('/midtrans-callback', [CobaMidtransController::class, 'handleCallback']);
+
+// routes/api.php untuk mengolah keranjang
+Route::post('/midtrans-callback', [App\Http\Controllers\KeranjangController::class, 'handleCallback']);

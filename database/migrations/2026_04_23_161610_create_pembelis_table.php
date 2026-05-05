@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('pembeli', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete(); //jika parent di hapus, maka anak akan ikut terhapus
+            $table->foreignId('user_id')->constrained()->cascadeOnDelete()->nullable(); //jika parent di hapus, maka anak akan ikut terhapus
             $table->string('kode_pembeli'); 
             $table->string('nama_pembeli'); 
             $table->string('alamat'); 
